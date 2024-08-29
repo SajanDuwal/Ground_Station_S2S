@@ -1,0 +1,2 @@
+../Core/Src/ax25_packet.c:17:6:getHDLCPacket	2
+../Core/Src/ax25_packet.c:57:6:getAX25Packet	2
