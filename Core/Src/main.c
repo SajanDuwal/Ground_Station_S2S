@@ -154,13 +154,6 @@ void radioConfig(uint8_t *buffer, uint8_t buffer_len) {
 	SUBGRF_SetPaConfig(PA_DUTY_CYCLE, HP_MAX, PA_SEL, 0x01);
 	SUBGRF_SetTxParams(RFO_LP, POWER, RAMP_TIME);
 
-	SUBGRF_Init(DioIrqHndlr);
-	SUBGRF_SetDioIrqParams(
-			IRQ_TX_DONE | IRQ_PREAMBLE_DETECTED | IRQ_RX_DONE
-					| IRQ_RX_TX_TIMEOUT | IRQ_SYNCWORD_VALID,
-			IRQ_TX_DONE | IRQ_PREAMBLE_DETECTED | IRQ_RX_DONE
-					| IRQ_RX_TX_TIMEOUT | IRQ_SYNCWORD_VALID, IRQ_RADIO_NONE,
-			IRQ_RADIO_NONE);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
@@ -228,6 +221,14 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
 	HAL_TIM_Base_Start(&htim2);
+
+	SUBGRF_Init(DioIrqHndlr);
+	SUBGRF_SetDioIrqParams(
+			IRQ_TX_DONE | IRQ_PREAMBLE_DETECTED | IRQ_RX_DONE
+					| IRQ_RX_TX_TIMEOUT | IRQ_SYNCWORD_VALID,
+			IRQ_TX_DONE | IRQ_PREAMBLE_DETECTED | IRQ_RX_DONE
+					| IRQ_RX_TX_TIMEOUT | IRQ_SYNCWORD_VALID, IRQ_RADIO_NONE,
+			IRQ_RADIO_NONE);
 
 	myDebug("########## Slippers2Sat Ground Station: BEGIN ##########\r\n");
 	myDebug("########## COMMUNICATION PARAMETERS ##########\r\n");
@@ -472,7 +473,7 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 				uint8_t gs_cmd_buff[150];
 				int gs_cmd_len = bit_destuffing(crc_buff, gs_cmd_buff,
 						crc_buff_len);
-				gs_cmd_len--;
+//				gs_cmd_len--;
 
 				myDebug(
 						"\nSatellite Real Data, Length: %d bytes  and RSSI: %d dBm\r\n",
@@ -489,7 +490,7 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 			} else {
 				checksum_error_count++;
 				myDebug(
-						"Satellite Data checksum error: 0x%x and no of packets: %d\r\n",
+						"Satellite Data checksum error and no of error packets: %d\r\n",
 						checksum_error_count);
 				for (int i = 0; i < sizeof(temp_check_buff); i++) {
 					myDebug("%02x ", temp_check_buff[i]);
