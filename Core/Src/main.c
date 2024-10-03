@@ -43,8 +43,12 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define MAIN_CMD_LENGTH			(13)  //  main 13 bytes command received from UART2
+#define MAIN_CMD_LENGTH			(13)  //  main 13 bytes command
 #define RX_PAYLOAD_LENGTH 		(105) //  maximum data receiving capacity from radio
+
+#define MAIN_CMD_LENGTH_TEMP	(38)  //  main 38 bytes command ASCII
+
+#define CMD_LENGTH_TEMP			(39)  //  main 39 bytes command received from UART2
 
 #define FREQ_435_MHZ            (435313000) //UP-LINK
 #define FREQ_437_MHZ			(437375000)	//DOWN-LINK
@@ -68,6 +72,12 @@
 /* USER CODE BEGIN PV */
 PacketParams_t pkt_params;
 ModulationParams_t mod_params;
+
+uint8_t cmd_temp_len = CMD_LENGTH_TEMP;
+uint8_t cmd_temp[CMD_LENGTH_TEMP];
+
+uint8_t main_cmd_temp_len = MAIN_CMD_LENGTH_TEMP;
+uint8_t main_cmd_temp[MAIN_CMD_LENGTH_TEMP];
 
 uint8_t main_cmd_len = MAIN_CMD_LENGTH;
 uint8_t main_cmd[MAIN_CMD_LENGTH];
@@ -159,19 +169,56 @@ void radioConfig(uint8_t *buffer, uint8_t buffer_len) {
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart == &huart2) {
 
-		uint8_t header = 0x00;
-		if (main_cmd[0] == header || main_cmd[0] != 0x53) {
+		uint8_t newLine = 0x0a;
 
-			for (int loop1 = 0; loop1 < sizeof(main_cmd); loop1++) {
-				main_cmd[loop1] = main_cmd[loop1 + 1];
+		uint8_t header = 0x00;
+
+		if (cmd_temp[0] == header || cmd_temp[0] == newLine) {
+
+			for (int loop1 = 0; loop1 < sizeof(cmd_temp); loop1++) {
+				cmd_temp[loop1] = cmd_temp[loop1 + 1];
+//				myDebug("%02x ", cmd_temp[loop1]);
 			}
+		}
+
+		for (int loop2 = 0; loop2 < sizeof(main_cmd_temp); loop2++) {
+			main_cmd_temp[loop2] = cmd_temp[loop2];
+//			myDebug("%02x ", main_cmd_temp[loop2]);
+		}
+
+		int input_length = sizeof(main_cmd_temp) / sizeof(main_cmd_temp[0]);
+
+		// Temporary array to store non-space characters
+		uint8_t temp_chars[input_length];
+		int temp_count = 0;
+
+		// Filter out space characters (ASCII 0x20)
+		for (int i = 0; i < input_length; i++) {
+			if (main_cmd_temp[i] != 0x20) {
+				temp_chars[temp_count++] = main_cmd_temp[i];
+			}
+		}
+
+		// Calculate the number of bytes
+		int byte_count = temp_count / 2;
+
+		// Output byte array
+		uint8_t byte_array[byte_count];
+
+		// Convert pairs of characters to bytes
+		for (int i = 0; i < byte_count; i++) {
+			uint8_t high_nibble = acciiToHex(temp_chars[2 * i]);
+			uint8_t low_nibble = acciiToHex(temp_chars[2 * i + 1]);
+
+			byte_array[i] = (high_nibble << 4) | low_nibble;
 		}
 
 		myDebug("\n-->Main command Received: 0x%x\r\n", main_cmd);
 
-		if (sizeof(main_cmd) == main_cmd_len) {
+		if (sizeof(byte_array) == main_cmd_len) {
 //			myDebug("-->Command ACK: 0x%x\r\n", main_cmd);
 			for (int i = 0; i < main_cmd_len; i++) {
+				main_cmd[i] = byte_array[i];
 				myDebug("%02x ", main_cmd[i]);
 			}
 			myDebug("\r\n");
@@ -187,38 +234,38 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
-  /* USER CODE BEGIN 1 */
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
+	/* USER CODE BEGIN 1 */
 
-  /* USER CODE END 1 */
+	/* USER CODE END 1 */
 
-  /* MCU Configuration--------------------------------------------------------*/
+	/* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+	HAL_Init();
 
-  /* USER CODE BEGIN Init */
+	/* USER CODE BEGIN Init */
 
-  /* USER CODE END Init */
+	/* USER CODE END Init */
 
-  /* Configure the system clock */
-  SystemClock_Config();
+	/* Configure the system clock */
+	SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
+	/* USER CODE BEGIN SysInit */
 
-  /* USER CODE END SysInit */
+	/* USER CODE END SysInit */
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_DMA_Init();
-  MX_USART2_UART_Init();
-  MX_TIM2_Init();
-  MX_SubGHz_Phy_Init();
-  /* USER CODE BEGIN 2 */
+	/* Initialize all configured peripherals */
+	MX_GPIO_Init();
+	MX_DMA_Init();
+	MX_USART2_UART_Init();
+	MX_TIM2_Init();
+	MX_SubGHz_Phy_Init();
+	MX_USART1_UART_Init();
+	/* USER CODE BEGIN 2 */
 
 	HAL_TIM_Base_Start(&htim2);
 
@@ -268,17 +315,17 @@ int main(void)
 	SUBGRF_SetSwitch(RFO_LP, RFSWITCH_RX);
 	SUBGRF_SetRxBoosted(0xFFFFFF);
 
-	HAL_UART_Receive_DMA(&huart2, main_cmd, main_cmd_len);
+	HAL_UART_Receive_DMA(&huart2, cmd_temp, cmd_temp_len);
 
-  /* USER CODE END 2 */
+	/* USER CODE END 2 */
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+	/* Infinite loop */
+	/* USER CODE BEGIN WHILE */
 	while (1) {
-    /* USER CODE END WHILE */
-    MX_SubGHz_Phy_Process();
+		/* USER CODE END WHILE */
+		MX_SubGHz_Phy_Process();
 
-    /* USER CODE BEGIN 3 */
+		/* USER CODE BEGIN 3 */
 
 		delay_us(500000);
 
@@ -328,57 +375,53 @@ int main(void)
 			SUBGRF_SendPayload(tx_buffer, tx_buffer_len, 0);
 		}
 
-		HAL_UART_Receive_DMA(&huart2, main_cmd, main_cmd_len);
+		HAL_UART_Receive_DMA(&huart2, cmd_temp, cmd_temp_len);
 
 	}
-  /* USER CODE END 3 */
+	/* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
+	RCC_OscInitTypeDef RCC_OscInitStruct = { 0 };
+	RCC_ClkInitTypeDef RCC_ClkInitStruct = { 0 };
 
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+	/** Configure the main internal regulator output voltage
+	 */
+	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS_PWR;
-  RCC_OscInitStruct.HSEDiv = RCC_HSE_DIV1;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV2;
-  RCC_OscInitStruct.PLL.PLLN = 6;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	/** Initializes the CPU, AHB and APB buses clocks
+	 */
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS_PWR;
+	RCC_OscInitStruct.HSEDiv = RCC_HSE_DIV1;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV2;
+	RCC_OscInitStruct.PLL.PLLN = 6;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+	RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+	RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+		Error_Handler();
+	}
 
-  /** Configure the SYSCLKSource, HCLK, PCLK1 and PCLK2 clocks dividers
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK3|RCC_CLOCKTYPE_HCLK
-                              |RCC_CLOCKTYPE_SYSCLK|RCC_CLOCKTYPE_PCLK1
-                              |RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.AHBCLK3Divider = RCC_SYSCLK_DIV1;
+	/** Configure the SYSCLKSource, HCLK, PCLK1 and PCLK2 clocks dividers
+	 */
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK3 | RCC_CLOCKTYPE_HCLK
+			| RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+	RCC_ClkInitStruct.AHBCLK3Divider = RCC_SYSCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
+		Error_Handler();
+	}
 }
 
 /* USER CODE BEGIN 4 */
@@ -419,7 +462,7 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 		SUBGRF_SetSwitch(RFO_LP, RFSWITCH_RX);
 		SUBGRF_SetRxBoosted(0xFFFFFF);
 
-		HAL_UART_Receive_DMA(&huart2, main_cmd, main_cmd_len);
+		HAL_UART_Receive_DMA(&huart2, cmd_temp, cmd_temp_len);
 
 	}
 
@@ -484,9 +527,28 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 					main_gs_cmd[i] = gs_cmd_buff[i];
 					myDebug("%02x ", main_gs_cmd[i]);
 				}
+
+				uint8_t main_gs_cmd_7e_len = sizeof(main_gs_cmd) + 2;
+				uint8_t main_gs_cmd_7e[main_gs_cmd_7e_len];
+
+				main_gs_cmd_7e[0] = 0x7e;
+
+				int j = 1;
+				for (int i = 0; i < sizeof(main_gs_cmd); i++) {
+					main_gs_cmd_7e[j] = main_gs_cmd[i];
+					j++;
+				}
+
+				main_gs_cmd_7e[j] = 0x7e;
+
+				HAL_UART_Transmit(&huart2, main_gs_cmd_7e,
+						sizeof(main_gs_cmd_7e), 2000);
+
 				myDebug("\r\n");
 				myDebug("__________\r\n");
 				memset(main_gs_cmd, '\0', gs_cmd_len);
+				memset(main_gs_cmd_7e, '\0', main_gs_cmd_7e_len);
+
 			} else {
 				checksum_error_count++;
 				myDebug(
@@ -495,10 +557,28 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 				for (int i = 0; i < sizeof(temp_check_buff); i++) {
 					myDebug("%02x ", temp_check_buff[i]);
 				}
+
+				uint8_t main_gs_cmd_7e_len = sizeof(temp_check_buff) + 2;
+				uint8_t main_gs_cmd_7e[main_gs_cmd_7e_len];
+
+				main_gs_cmd_7e[0] = 0x7e;
+
+				int j = 1;
+				for (int i = 0; i < sizeof(temp_check_buff); i++) {
+					main_gs_cmd_7e[j] = temp_check_buff[i];
+					j++;
+				}
+
+				main_gs_cmd_7e[j] = 0x7e;
+
+				HAL_UART_Transmit(&huart2, main_gs_cmd_7e,
+						sizeof(main_gs_cmd_7e), 2000);
+
 				myDebug("\r\n");
 				myDebug("__________\r\n");
 				memset(rx_buffer, '\0', sizeof(rx_buffer_len));
 				memset(crc_buff, '\0', sizeof(crc_buff));
+				memset(main_gs_cmd_7e, '\0', main_gs_cmd_7e_len);
 			}
 		} else {
 			myDebug("Satellite Data not completely received, Length: %d \r\n",
@@ -506,32 +586,49 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 			for (int i = 0; i < sizeof(rx_buffer); i++) {
 				myDebug("%02x ", rx_buffer[i]);
 			}
+
+			uint8_t main_gs_cmd_7e_len = sizeof(rx_buffer) + 2;
+			uint8_t main_gs_cmd_7e[main_gs_cmd_7e_len];
+
+			main_gs_cmd_7e[0] = 0x7e;
+
+			int j = 1;
+			for (int i = 0; i < sizeof(rx_buffer); i++) {
+				main_gs_cmd_7e[j] = rx_buffer[i];
+				j++;
+			}
+
+			main_gs_cmd_7e[j] = 0x7e;
+
+			HAL_UART_Transmit(&huart2, main_gs_cmd_7e, sizeof(main_gs_cmd_7e),
+					2000);
+
 			myDebug("\r\n");
 			myDebug("__________\r\n");
 			memset(rx_buffer, '\0', sizeof(rx_buffer_len));
+			memset(main_gs_cmd_7e, '\0', main_gs_cmd_7e_len);
 		}
 
 		SUBGRF_SetRfFrequency(FREQ_437_MHZ);
 		SUBGRF_SetSwitch(RFO_LP, RFSWITCH_RX);
 		SUBGRF_SetRxBoosted(0xFFFFFF);
 
-		HAL_UART_Receive_DMA(&huart2, main_cmd, main_cmd_len);
+		HAL_UART_Receive_DMA(&huart2, cmd_temp, cmd_temp_len);
 	}
 }
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
-  /* USER CODE BEGIN Error_Handler_Debug */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
+	/* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
 	__disable_irq();
 	while (1) {
 	}
-  /* USER CODE END Error_Handler_Debug */
+	/* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef  USE_FULL_ASSERT

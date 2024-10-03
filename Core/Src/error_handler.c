@@ -5,7 +5,6 @@
  *      Author: sajanduwal
  */
 
-
 #include "error_handler.h"
 
 // Function to calculate CRC-CCITT for AX.25 frames
@@ -125,8 +124,7 @@ int bit_stuffing(uint8_t *data, uint8_t *output_data, int length) {
 //	}
 //	myDebug("\n");
 
-
-	for(int i = 0; i < length; i++){
+	for (int i = 0; i < length; i++) {
 		output_data[i] = data[i];
 	}
 
@@ -136,43 +134,43 @@ int bit_stuffing(uint8_t *data, uint8_t *output_data, int length) {
 }
 
 int bit_destuffing(uint8_t *data, uint8_t *output_data, int length) {
-    int out_index = 0;
-    int bit_count = 0;
-    uint8_t current_byte = 0;
-    int bit_pos = 7;
+	int out_index = 0;
+	int bit_count = 0;
+	uint8_t current_byte = 0;
+	int bit_pos = 7;
 
-    for (int i = 0; i < length; i++) {
-        for (int bit = 7; bit >= 0; bit--) {
-            int bit_val = (data[i] >> bit) & 1;
+	for (int i = 0; i < length; i++) {
+		for (int bit = 7; bit >= 0; bit--) {
+			int bit_val = (data[i] >> bit) & 1;
 
-            if (bit_val) {
-                bit_count++;
-                current_byte |= (bit_val << bit_pos);
-                bit_pos--;
-            } else {
-                if (bit_count == 5) {
-                    // Skip this bit as it is a stuffed bit
-                    bit_count = 0;
-                    continue;
-                } else {
-                    bit_count = 0;
-                    current_byte |= (bit_val << bit_pos);
-                    bit_pos--;
-                }
-            }
+			if (bit_val) {
+				bit_count++;
+				current_byte |= (bit_val << bit_pos);
+				bit_pos--;
+			} else {
+				if (bit_count == 5) {
+					// Skip this bit as it is a stuffed bit
+					bit_count = 0;
+					continue;
+				} else {
+					bit_count = 0;
+					current_byte |= (bit_val << bit_pos);
+					bit_pos--;
+				}
+			}
 
-            if (bit_pos < 0) {
-                output_data[out_index++] = current_byte;
-                current_byte = 0;
-                bit_pos = 7;
-            }
-        }
-    }
+			if (bit_pos < 0) {
+				output_data[out_index++] = current_byte;
+				current_byte = 0;
+				bit_pos = 7;
+			}
+		}
+	}
 
-    // Ensure the last byte is written if it's partially filled
-    if (bit_pos < 7) {
-        output_data[out_index++] = current_byte;
-    }
+	// Ensure the last byte is written if it's partially filled
+	if (bit_pos < 7) {
+		output_data[out_index++] = current_byte;
+	}
 
 //	myDebug("Error handler: After bit de-stuffing \n");
 //
@@ -185,11 +183,28 @@ int bit_destuffing(uint8_t *data, uint8_t *output_data, int length) {
 //	}
 //	myDebug("\n");
 
-	for(int i = 0; i < length; i++){
+	for (int i = 0; i < length; i++) {
 		output_data[i] = data[i];
 	}
 
 	out_index = length;
 
-    return out_index;
+	return out_index;
 }
+
+uint8_t acciiToHex(uint8_t ascii) {
+	if (ascii >= '0' && ascii <= '9') {
+		return ascii - '0';
+	} else if (ascii >= 'A' && ascii <= 'F') {
+		return ascii - 'A' + 10;
+	} else if (ascii >= 'a' && ascii <= 'f') {
+		return ascii - 'a' + 10;
+	} else {
+		// Invalid character for hex conversion
+		return 0xFF;
+	}
+}
+
+
+
+

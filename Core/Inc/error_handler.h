@@ -19,4 +19,6 @@ int bit_stuffing(uint8_t *data, uint8_t *output_data, int length);
 
 int bit_destuffing(uint8_t *data, uint8_t *output_data, int length);
 
+uint8_t acciiToHex(uint8_t ascii);
+
 #endif /* INC_ERROR_HANDLER_H_ */

@@ -14,7 +14,7 @@ void myDebug(const char *fmt, ...) {
 	vsnprintf(temp, sizeof(temp), fmt, args);
 	va_end(args);
 	int len = bufferSize(temp);
-	HAL_UART_Transmit(&huart2, (uint8_t*) temp, len, 1000);
+	HAL_UART_Transmit(&huart1, (uint8_t*) temp, len, 1000);
 }
 
 int bufferSize(char *buffer) {
