@@ -1,5 +1,8 @@
 ../Core/Src/error_handler.c:11:10:calculateCRC_CCITT_AX25	32	static
 ../Core/Src/error_handler.c:32:10:calc_CRC	64	dynamic
-../Core/Src/error_handler.c:57:5:bit_stuffing	64	static
-../Core/Src/error_handler.c:136:5:bit_destuffing	56	static
-../Core/Src/error_handler.c:195:9:acciiToHex	16	static
+../Core/Src/error_handler.c:57:5:countsDataBetweenFlags	32	static
+../Core/Src/error_handler.c:81:5:countsDataFromLastFlag	24	static
+../Core/Src/error_handler.c:101:5:countsDataBeforeFirstSpace	24	static
+../Core/Src/error_handler.c:121:5:bit_stuffing	64	static
+../Core/Src/error_handler.c:200:5:bit_destuffing	56	static
+../Core/Src/error_handler.c:259:9:acciiToHex	16	static

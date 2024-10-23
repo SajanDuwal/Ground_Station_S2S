@@ -1,0 +1,2 @@
+../Core/Src/digipeater_generator.c:20:6:getHDLCDigipeaterPacket	2
+../Core/Src/digipeater_generator.c:72:6:getDigipeaterPacket	2

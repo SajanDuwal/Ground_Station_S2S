@@ -54,6 +54,70 @@ uint16_t calc_CRC(const uint8_t *data, size_t length) {
 	return crcReg;
 }
 
+int countsDataBetweenFlags(uint8_t *data, int data_length) {
+	int found_first_7e = 0;
+	int start_index = 0, end_index = 0;
+
+	for (int i = 0; i < data_length; i++) {
+		if (data[i] == 0x7e) {
+			if (!found_first_7e) {
+				found_first_7e = 1;
+				start_index = i;
+			} else {
+				end_index = i;
+				break;
+			}
+		}
+	}
+
+	if (end_index > start_index) {
+		return end_index - start_index + 1;
+	} else {
+		return -1; // Return -1 if two 0x7E flags are not found
+	}
+}
+
+
+int countsDataFromLastFlag(uint8_t *data, int data_length) {
+	int end_index = -1;
+
+	// Traverse the array from the end to find the last occurrence of 0x7e
+	for (int i = data_length - 1; i >= 0; i--) {
+		if (data[i] == 0x7e) {
+			end_index = i;
+			break;
+		}
+	}
+
+	// If the last 0x7e is found, return the count from that index to the beginning
+	if (end_index != -1) {
+		return end_index + 1;
+	} else {
+		return -1; // Return -1 if no 0x7E flag is found
+	}
+}
+
+
+int countsDataBeforeFirstSpace(uint8_t *data, int data_length) {
+    int start_index = -1;
+
+    // Traverse the array from the beginning to find the first occurrence of 0x20
+    for (int i = 0; i < data_length; i++) {
+        if (data[i] == 0x20) {
+            start_index = i;
+            break;
+        }
+    }
+
+    // If the first 0x20 is found, return the count from that index to the end
+    if (start_index != -1) {
+        return start_index;
+    } else {
+        return -1; // Return -1 if no 0x20 flag is found
+    }
+}
+
+
 int bit_stuffing(uint8_t *data, uint8_t *output_data, int length) {
 	int out_index = 0;
 	int bit_count = 0; // Count of consecutive 1 bits
@@ -204,6 +268,9 @@ uint8_t acciiToHex(uint8_t ascii) {
 		return 0xFF;
 	}
 }
+
+
+
 
 
 

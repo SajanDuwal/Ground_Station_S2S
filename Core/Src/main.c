@@ -29,6 +29,8 @@
 #include "radio_driver.h"
 #include "com_debug.h"
 #include "ax25_packet.h"
+#include "digipeater_generator.h"
+#include "error_handler.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,12 +45,15 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+
+#define GS_CMD_LENGTH			(20) // source call sign 7, 13 bytes command
+
 #define MAIN_CMD_LENGTH			(13)  //  main 13 bytes command
 #define RX_PAYLOAD_LENGTH 		(105) //  maximum data receiving capacity from radio
 
 #define MAIN_CMD_LENGTH_TEMP	(38)  //  main 38 bytes command ASCII
 
-#define CMD_LENGTH_TEMP			(39)  //  main 39 bytes command received from UART2
+#define CMD_LENGTH_TEMP			(52)  //  main 39 bytes command received from UART2
 
 #define FREQ_435_MHZ            (435313000) //UP-LINK
 #define FREQ_437_MHZ			(437375000)	//DOWN-LINK
@@ -73,6 +78,9 @@
 PacketParams_t pkt_params;
 ModulationParams_t mod_params;
 
+uint8_t gs_cmd_len = GS_CMD_LENGTH;
+uint8_t gs_cmd[GS_CMD_LENGTH];
+
 uint8_t cmd_temp_len = CMD_LENGTH_TEMP;
 uint8_t cmd_temp[CMD_LENGTH_TEMP];
 
@@ -86,6 +94,8 @@ uint8_t temp_tx_buffer[100];
 int tx_buffer_len = 0;
 uint8_t tx_buffer[100];
 
+uint8_t temp_tx_dp_buffer[150];
+
 uint8_t rx_buffer_len = RX_PAYLOAD_LENGTH;
 uint8_t rx_buffer[RX_PAYLOAD_LENGTH];
 
@@ -98,7 +108,6 @@ int checksum_error_count = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-int countsDataBetweenFlags(uint8_t *data, int data_length);
 void setPacketParams(uint8_t buffer_length);
 void setModulationParams(unsigned long bitRate, unsigned long fDev);
 void radioConfig(uint8_t *buffer, uint8_t buffer_len);
@@ -108,29 +117,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-int countsDataBetweenFlags(uint8_t *data, int data_length) {
-	int found_first_7e = 0;
-	int start_index = 0, end_index = 0;
-
-	for (int i = 0; i < data_length; i++) {
-		if (data[i] == 0x7e) {
-			if (!found_first_7e) {
-				found_first_7e = 1;
-				start_index = i;
-			} else {
-				end_index = i;
-				break;
-			}
-		}
-	}
-
-	if (end_index > start_index) {
-		return end_index - start_index + 1;
-	} else {
-		return -1; // Return -1 if two 0x7E flags are not found
-	}
-}
 
 void setPacketParams(uint8_t buffer_length) {
 	pkt_params.PacketType = PACKET_TYPE_GFSK;
@@ -177,57 +163,367 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
 			for (int loop1 = 0; loop1 < sizeof(cmd_temp); loop1++) {
 				cmd_temp[loop1] = cmd_temp[loop1 + 1];
-//				myDebug("%02x ", cmd_temp[loop1]);
 			}
 		}
 
-		for (int loop2 = 0; loop2 < sizeof(main_cmd_temp); loop2++) {
-			main_cmd_temp[loop2] = cmd_temp[loop2];
-//			myDebug("%02x ", main_cmd_temp[loop2]);
-		}
+		if (cmd_temp[0] == 0x4d && cmd_temp[1] == 0x4f &&     	//MO
+				cmd_temp[2] == 0x44 && cmd_temp[3] == 0x45 &&  	// DE
+				cmd_temp[4] == 0x54 && cmd_temp[5] == 0x45 &&  	 //TE
+				cmd_temp[6] == 0x4c && cmd_temp[7] == 0x45) {			//LE
 
-		int input_length = sizeof(main_cmd_temp) / sizeof(main_cmd_temp[0]);
-
-		// Temporary array to store non-space characters
-		uint8_t temp_chars[input_length];
-		int temp_count = 0;
-
-		// Filter out space characters (ASCII 0x20)
-		for (int i = 0; i < input_length; i++) {
-			if (main_cmd_temp[i] != 0x20) {
-				temp_chars[temp_count++] = main_cmd_temp[i];
-			}
-		}
-
-		// Calculate the number of bytes
-		int byte_count = temp_count / 2;
-
-		// Output byte array
-		uint8_t byte_array[byte_count];
-
-		// Convert pairs of characters to bytes
-		for (int i = 0; i < byte_count; i++) {
-			uint8_t high_nibble = acciiToHex(temp_chars[2 * i]);
-			uint8_t low_nibble = acciiToHex(temp_chars[2 * i + 1]);
-
-			byte_array[i] = (high_nibble << 4) | low_nibble;
-		}
-
-		myDebug("\n-->Main command Received: 0x%x\r\n", main_cmd);
-
-		if (sizeof(byte_array) == main_cmd_len) {
-//			myDebug("-->Command ACK: 0x%x\r\n", main_cmd);
-			for (int i = 0; i < main_cmd_len; i++) {
-				main_cmd[i] = byte_array[i];
-				myDebug("%02x ", main_cmd[i]);
-			}
-			myDebug("\r\n");
-			TX_FLAG = 1;
-		} else {
-			myDebug("-->Command Not ACK: 0x%x\r\n", main_cmd);
-			memset(main_cmd, '\0', main_cmd_len);
 			TX_FLAG = 0;
+
+			setPacketParams(rx_buffer_len);
+			setModulationParams(GFSK_BR_4800, GFSK_FDEV_4800);
+			radioConfig(rx_buffer, rx_buffer_len);
+
+			myDebug("\n########## RX Configuration: ##########\n");
+
+			myDebug("FREQUENCY MODS: Downlink FREQ: %lu Hz\r\n", FREQ_437_MHZ);
+			myDebug("Bit Rate: 	%d\n\r", mod_params.Params.Gfsk.BitRate);
+			myDebug("Frequency Deviation: 	%d\n\r",
+					mod_params.Params.Gfsk.Fdev);
+			myDebug("RECEVING BANDWIDTH: 	%d\n\r",
+					mod_params.Params.Gfsk.Bandwidth);
+			myDebug("Packet Type 			%d\n\r", pkt_params.PacketType);
+			myDebug("PayloadLength 			%d\n\r",
+					pkt_params.Params.Gfsk.PayloadLength);
+			myDebug("PreambleLength 		%d\n\r",
+					pkt_params.Params.Gfsk.PreambleLength);
+			myDebug("PreambleMinDetect		%d\n\r",
+					pkt_params.Params.Gfsk.PreambleMinDetect);
+			myDebug("HeaderType 			%d\n\r", pkt_params.Params.Gfsk.HeaderType);
+			myDebug("______________*******************______________\r\n");
+
+			SUBGRF_SetRfFrequency(FREQ_437_MHZ);
+			SUBGRF_SetSwitch(RFO_LP, RFSWITCH_RX);
+			SUBGRF_SetRxBoosted(0xFFFFFF);
+
+			HAL_UART_Receive_DMA(&huart2, cmd_temp, cmd_temp_len);
+
+		} else if (cmd_temp[0] == 0x4d && cmd_temp[1] == 0x4f &&     //MO
+				cmd_temp[2] == 0x44 && cmd_temp[3] == 0x45 &&  	// DE
+				cmd_temp[4] == 0x44 && cmd_temp[5] == 0x49 &&   //DI
+				cmd_temp[6] == 0x47 && cmd_temp[7] == 0x49) {		//GI
+
+			TX_FLAG = 0;
+
+			setPacketParams(rx_buffer_len);
+			setModulationParams(GFSK_BR_1200, GFSK_FDEV_1200);
+			radioConfig(rx_buffer, rx_buffer_len);
+
+			myDebug("\n########## RX Configuration: ##########\n");
+
+			myDebug("FREQUENCY MODS: Downlink FREQ: %lu Hz\r\n", FREQ_437_MHZ);
+			myDebug("Bit Rate: 	%d\n\r", mod_params.Params.Gfsk.BitRate);
+			myDebug("Frequency Deviation: 	%d\n\r",
+					mod_params.Params.Gfsk.Fdev);
+			myDebug("RECEVING BANDWIDTH: 	%d\n\r",
+					mod_params.Params.Gfsk.Bandwidth);
+			myDebug("Packet Type 			%d\n\r", pkt_params.PacketType);
+			myDebug("PayloadLength 			%d\n\r",
+					pkt_params.Params.Gfsk.PayloadLength);
+			myDebug("PreambleLength 		%d\n\r",
+					pkt_params.Params.Gfsk.PreambleLength);
+			myDebug("PreambleMinDetect		%d\n\r",
+					pkt_params.Params.Gfsk.PreambleMinDetect);
+			myDebug("HeaderType 			%d\n\r", pkt_params.Params.Gfsk.HeaderType);
+			myDebug("______________*******************______________\r\n");
+
+			SUBGRF_SetRfFrequency(FREQ_437_MHZ);
+			SUBGRF_SetSwitch(RFO_LP, RFSWITCH_RX);
+			SUBGRF_SetRxBoosted(0xFFFFFF);
+
+			HAL_UART_Receive_DMA(&huart2, cmd_temp, cmd_temp_len);
+
+		} else if (cmd_temp[0] == 0x53 && cmd_temp[1] == 0x32
+				&& cmd_temp[2] == 0x53) {								 //S2S
+
+			TX_FLAG = 0;
+
+			// Section 1: dp_head (first 3 bytes)
+			unsigned char dp_head[4];
+			strncpy((char*) dp_head, (char*) cmd_temp, 3);
+			dp_head[3] = '\0'; // Null-terminate the string
+
+			// Section 2: destination_callsign (from byte 4 to the byte before '>' or 0x3e)
+			unsigned char *dest_end = (unsigned char*) strchr(
+					(char*) cmd_temp + 3, 0x3e); // Find the '>' (0x3e)
+			int dest_size = dest_end - (cmd_temp + 3); // Get the size excluding '>'
+			// Ensure the destination_callsign is exactly 7 bytes
+			unsigned char destination_callsign[8]; // Array size of 8 to include 7 bytes plus null terminator
+			// Copy the actual destination_callsign data
+			strncpy((char*) destination_callsign, (char*) cmd_temp + 3,
+					dest_size);
+			// Shift each element of destination_callsign by 1 bit to the left
+			for (int i = 0; i < dest_size; i++) {
+				destination_callsign[i] <<= 1;  // Perform left shift by 1 bit
+			}
+			// If dest_size is less than 7, pad with 0x40 until it reaches 6 bytes, then set the last byte to 0xe0
+			if (dest_size < 7) {
+				for (int i = dest_size; i < 7; i++) {
+					destination_callsign[i] = 0x40;  // Padding with 0x40
+				}
+				destination_callsign[6] = 0xE0;  // Set the last byte to 0xe0
+			}
+			destination_callsign[7] = '\0'; // Null-terminate (not strictly necessary for binary data, but good practice)
+
+			// Section 3: source_callsign (from '>' to the byte before ',' or 0x2C)
+			unsigned char *src_start = dest_end + 1; // Start after '>'
+			unsigned char *src_end = (unsigned char*) strchr((char*) src_start,
+					0x2C); // Find the ',' (0x2c)
+			int src_size = src_end - src_start; // Get the size
+			// Ensure the source_callsign is exactly 7 bytes
+			unsigned char source_callsign[8]; // Array size of 8 to include 7 bytes plus null terminator
+			// Copy the actual source_callsign data
+			strncpy((char*) source_callsign, (const char*) src_start, src_size);
+			// Shift each element of source_callsign by 1 bit to the left
+			for (int i = 0; i < src_size; i++) {
+				source_callsign[i] <<= 1;  // Perform left shift by 1 bit
+			}
+			// If src_size is less than 7, pad with 0x40 until it reaches 6 bytes, then set the last byte to 0xe0
+			if (src_size < 7) {
+				for (int i = src_size; i < 7; i++) {
+					source_callsign[i] = 0x40;  // Padding with 0x40
+				}
+				source_callsign[6] = 0xE0;  // Set the last byte to 0xe0
+			}
+			source_callsign[7] = '\0'; // Null-terminate (optional for binary data)
+
+			// Section 4: packet_path (from ',' to the byte before ':' or 0x3A)
+			unsigned char *path_start = src_end + 1; // Start after ','
+			unsigned char *path_end = (unsigned char*) strchr(
+					(char*) path_start, 0x3A); // Find the ':' (0x3a)
+			int path_size = path_end - path_start; // Get the size
+			unsigned char packet_path[path_size + 1];
+			strncpy((char*) packet_path, (const char*) path_start, path_size);
+			packet_path[path_size] = '\0'; // Null-terminate
+
+			// Section 5: message_field (from ':' to before '20 37 65')
+			unsigned char *msg_start = path_end + 1; // Start after ':'
+			unsigned char *msg_end = (unsigned char*) strstr((char*) msg_start,
+					"\x20\x37\x65"); // Find '20 37 65'
+			int msg_size = msg_end - msg_start; // Get the size before '20 37 65'
+			unsigned char message_field[msg_size + 1];
+			strncpy((char*) message_field, (const char*) msg_start, msg_size);
+			message_field[msg_size] = '\0'; // Null-terminate
+
+			// Combine all sections into one array
+			int total_size = 3 + 7 + 7 + 7 + msg_size; // Calculate total size
+			uint8_t final_packet[total_size + 1]; // Add 1 for null termination (if needed for debug)
+			int offset = 0;
+
+			// Copy Section 1: dp_head
+			memcpy(final_packet + offset, dp_head, 3);
+			offset += 3;
+
+			// Copy Section 2: destination_callsign
+			memcpy(final_packet + offset, destination_callsign, 7);
+			offset += 7;
+
+			// Copy Section 3: source_callsign
+			memcpy(final_packet + offset, source_callsign, 7);
+			offset += 7;
+
+			// Copy Section 4: packet_path
+			memcpy(final_packet + offset, packet_path, 7);
+			offset += 7;
+
+			// Copy Section 5: message_field
+			memcpy(final_packet + offset, message_field, msg_size);
+			offset += msg_size;
+
+			final_packet[total_size] = '\0'; // Null-terminate for safety (optional for binary data)
+
+			// Print the entire final packet in hex format
+			myDebug("Digipeater Packet receive from DP-Station:\n");
+			for (int i = 0; i < total_size; i++) {
+				myDebug("%02x ", final_packet[i]);
+			}
+			myDebug("\n");
+
+			getDigipeaterPacket(final_packet, msg_size);
+
+			tx_buffer_len = countsDataBetweenFlags(temp_tx_dp_buffer,
+					sizeof(temp_tx_dp_buffer));
+
+			memset(tx_buffer, '\0', tx_buffer_len);
+
+//			myDebug("Digipeater Packet complete, ready to TX: 0x%x\r\n",
+//					temp_tx_dp_buffer);
+			for (int j = 0; j < tx_buffer_len; j++) {
+				tx_buffer[j] = temp_tx_dp_buffer[j];
+//				myDebug("%02x ", tx_buffer[j]);
+			}
+//			myDebug("\r\n");
+//			myDebug("size of tx_buffer = %d\r\n", tx_buffer_len);
+
+			memset(cmd_temp, '\0', sizeof(cmd_temp));
+			memset(temp_tx_dp_buffer, '\0', sizeof(temp_tx_dp_buffer));
+
+			delay_us(500000);
+
+			setPacketParams(tx_buffer_len);
+			setModulationParams(GFSK_BR_1200,
+			GFSK_FDEV_1200);
+			radioConfig(tx_buffer, tx_buffer_len);
+
+			myDebug("\n########## Digipeater TX Configuration: ##########\n");
+
+			myDebug("FREQUENCY MODS: DOWNLINK FREQ: %lu Hz\r\n",
+			FREQ_437_MHZ);
+			myDebug("Bit Rate: 	%d\n\r", mod_params.Params.Gfsk.BitRate);
+			myDebug("Frequency Deviation: 	%d\n\r",
+					mod_params.Params.Gfsk.Fdev);
+			myDebug("RECEVING BANDWIDTH: 	%d\n\r",
+					mod_params.Params.Gfsk.Bandwidth);
+			myDebug("Packet Type 			%d\n\r", pkt_params.PacketType);
+			myDebug("PayloadLength 			%d\n\r",
+					pkt_params.Params.Gfsk.PayloadLength);
+			myDebug("PreambleLength 		%d\n\r",
+					pkt_params.Params.Gfsk.PreambleLength);
+			myDebug("PreambleMinDetect		%d\n\r",
+					pkt_params.Params.Gfsk.PreambleMinDetect);
+			myDebug("HeaderType 			%d\n\r", pkt_params.Params.Gfsk.HeaderType);
+			myDebug("__________*******************__________\r\n");
+
+			SUBGRF_SetRfFrequency(FREQ_437_MHZ);
+			SUBGRF_SetSwitch(RFO_LP, RFSWITCH_TX);
+			SUBGRF_SendPayload(tx_buffer, tx_buffer_len, 0);
+
+		} else {
+
+			uint8_t source_call_sign_temp[13];
+			int a = 0;
+			for (int loop2 = 39; loop2 < 52; loop2++) {
+				source_call_sign_temp[a] = cmd_temp[loop2];
+//				myDebug("%02x ", source_call_sign_temp[a]);
+				a++;
+			}
+//			myDebug("\r\n");
+
+			int source_call_sign_len_temp = countsDataBeforeFirstSpace(
+					source_call_sign_temp, sizeof(source_call_sign_temp));
+
+			int source_call_sign_len = source_call_sign_len_temp;
+
+//			myDebug("length of call sign %d\n", source_call_sign_len_temp);
+
+			for (int j = 0; j < source_call_sign_len_temp; j++) {
+				// Check if the current element is 0x2D
+				if (source_call_sign_temp[j] == 0x2D) {
+					--source_call_sign_len;
+					continue; // Skip this element
+				}
+			}
+
+			uint8_t source_call_sign[source_call_sign_len];
+
+			int l = 0; // Index for source_call_sign array
+
+			for (int j = 0; j < source_call_sign_len_temp; j++) {
+				// Check if the current element is 0x2D
+				if (source_call_sign_temp[j] == 0x2D) {
+					continue; // Skip this element
+				}
+
+				// Copy the next valid element to source_call_sign[k]
+				source_call_sign[l] = source_call_sign_temp[j] << 1;
+
+//				myDebug("%02x ", source_call_sign[l]);
+
+				l++;
+			}
+//			myDebug("\n");
+
+			for (int loop2 = 0; loop2 < sizeof(main_cmd_temp); loop2++) {
+				main_cmd_temp[loop2] = cmd_temp[loop2];
+//				myDebug("%02x ", main_cmd_temp[loop2]);
+			}
+
+			int input_length = sizeof(main_cmd_temp) / sizeof(main_cmd_temp[0]);
+
+			// Temporary array to store non-space characters
+			uint8_t temp_chars[input_length];
+			int temp_count = 0;
+
+			// Filter out space characters (ASCII 0x20)
+			for (int i = 0; i < input_length; i++) {
+				if (main_cmd_temp[i] != 0x20) {
+					temp_chars[temp_count++] = main_cmd_temp[i];
+				}
+			}
+
+			// Calculate the number of bytes
+			int byte_count = temp_count / 2;
+
+			// Output byte array
+			uint8_t byte_array[byte_count];
+
+			// Convert pairs of characters to bytes
+			for (int i = 0; i < byte_count; i++) {
+				uint8_t high_nibble = acciiToHex(temp_chars[2 * i]);
+				uint8_t low_nibble = acciiToHex(temp_chars[2 * i + 1]);
+
+				byte_array[i] = (high_nibble << 4) | low_nibble;
+			}
+
+			myDebug("\n-->Main command Received: 0x%x\r\n", main_cmd);
+
+			if (sizeof(byte_array) == main_cmd_len) {
+				//			myDebug("-->Command ACK: 0x%x\r\n", main_cmd);
+				for (int i = 0; i < main_cmd_len; i++) {
+					main_cmd[i] = byte_array[i];
+//					myDebug("%02x ", main_cmd[i]);
+				}
+//				myDebug("\r\n");
+
+				int k = 0;
+				for (int i = 0; i < main_cmd_len; i++) {
+					gs_cmd[k] = main_cmd[i];
+					myDebug("%02x ", gs_cmd[k]);
+					k++;
+				}
+				myDebug("\n");
+
+				for (int i = 0; i < source_call_sign_len; i++) {
+					gs_cmd[k] = source_call_sign[i];
+					myDebug("%02x ", gs_cmd[k]);
+					k++;
+				}
+				myDebug("\n");
+
+				// Check if k is less than 20, and fill remaining bytes
+				if (k < 20) {
+					// Fill the remaining bytes with 0x40
+					for (int i = k; i < 19; i++) {
+						gs_cmd[i] = 0x40;
+					}
+
+					// Set the last byte to 0x61
+					gs_cmd[19] = 0x61;
+				}
+
+//				for (int i = 0; i < gs_cmd_len; i++) {
+//					myDebug("%02x ", gs_cmd[i]);
+//				}
+//				myDebug("\r\n");
+
+				TX_FLAG = 1;
+
+			} else {
+				myDebug("-->Command Not ACK: 0x%x\r\n", main_cmd);
+
+				for (int i = 0; i < main_cmd_len; i++) {
+					myDebug("%02x ", main_cmd[i]);
+				}
+				myDebug("\r\n");
+
+				memset(main_cmd, '\0', main_cmd_len);
+				TX_FLAG = 0;
+			}
 		}
+
 	}
 }
 
@@ -331,9 +627,9 @@ int main(void) {
 
 		if (TX_FLAG) {
 
-			getAX25Packet(main_cmd, main_cmd_len);
+			getAX25Packet(gs_cmd, gs_cmd_len);
 
-			tx_buffer_len = countsDataBetweenFlags(temp_tx_buffer,
+			tx_buffer_len = countsDataFromLastFlag(temp_tx_buffer,
 					sizeof(temp_tx_buffer));
 
 //			myDebug("AX.25 complete GS packet ready to TX: 0x%x\r\n", temp_tx_buffer);
@@ -346,6 +642,7 @@ int main(void) {
 //			myDebug("size of tx_buffer = %d\r\n", tx_buffer_len);
 
 			memset(main_cmd, '\0', main_cmd_len);
+			memset(gs_cmd, '\0', gs_cmd_len);
 			memset(temp_tx_buffer, '\0', sizeof(temp_tx_buffer));
 
 			setPacketParams(tx_buffer_len);
@@ -468,11 +765,12 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 
 	if (radioIrq == IRQ_RX_DONE) {
 		TX_FLAG = 0;
+		memset(rx_buffer, '\0', sizeof(rx_buffer));
 		SUBGRF_GetPayload(rx_buffer, &rx_buffer_len, RX_PAYLOAD_LENGTH);
 		rssi_value = SUBGRF_GetRssiInst();
 
 		uint8_t temp_rx_buffer_len = 0;
-		temp_rx_buffer_len = countsDataBetweenFlags(rx_buffer, rx_buffer_len);
+		temp_rx_buffer_len = countsDataFromLastFlag(rx_buffer, rx_buffer_len);
 
 		if (temp_rx_buffer_len != -1) {
 
@@ -528,26 +826,12 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 					myDebug("%02x ", main_gs_cmd[i]);
 				}
 
-				uint8_t main_gs_cmd_7e_len = sizeof(main_gs_cmd) + 2;
-				uint8_t main_gs_cmd_7e[main_gs_cmd_7e_len];
-
-				main_gs_cmd_7e[0] = 0x7e;
-
-				int j = 1;
-				for (int i = 0; i < sizeof(main_gs_cmd); i++) {
-					main_gs_cmd_7e[j] = main_gs_cmd[i];
-					j++;
-				}
-
-				main_gs_cmd_7e[j] = 0x7e;
-
-				HAL_UART_Transmit(&huart2, main_gs_cmd_7e,
-						sizeof(main_gs_cmd_7e), 2000);
+				HAL_UART_Transmit(&huart2, main_gs_cmd, sizeof(main_gs_cmd),
+						2000);
 
 				myDebug("\r\n");
 				myDebug("__________\r\n");
 				memset(main_gs_cmd, '\0', gs_cmd_len);
-				memset(main_gs_cmd_7e, '\0', main_gs_cmd_7e_len);
 
 			} else {
 				checksum_error_count++;
@@ -558,27 +842,14 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 					myDebug("%02x ", temp_check_buff[i]);
 				}
 
-				uint8_t main_gs_cmd_7e_len = sizeof(temp_check_buff) + 2;
-				uint8_t main_gs_cmd_7e[main_gs_cmd_7e_len];
-
-				main_gs_cmd_7e[0] = 0x7e;
-
-				int j = 1;
-				for (int i = 0; i < sizeof(temp_check_buff); i++) {
-					main_gs_cmd_7e[j] = temp_check_buff[i];
-					j++;
-				}
-
-				main_gs_cmd_7e[j] = 0x7e;
-
-				HAL_UART_Transmit(&huart2, main_gs_cmd_7e,
-						sizeof(main_gs_cmd_7e), 2000);
+				HAL_UART_Transmit(&huart2, temp_check_buff,
+						sizeof(temp_check_buff), 2000);
 
 				myDebug("\r\n");
 				myDebug("__________\r\n");
 				memset(rx_buffer, '\0', sizeof(rx_buffer_len));
 				memset(crc_buff, '\0', sizeof(crc_buff));
-				memset(main_gs_cmd_7e, '\0', main_gs_cmd_7e_len);
+
 			}
 		} else {
 			myDebug("Satellite Data not completely received, Length: %d \r\n",
@@ -587,26 +858,11 @@ void DioIrqHndlr(RadioIrqMasks_t radioIrq) {
 				myDebug("%02x ", rx_buffer[i]);
 			}
 
-			uint8_t main_gs_cmd_7e_len = sizeof(rx_buffer) + 2;
-			uint8_t main_gs_cmd_7e[main_gs_cmd_7e_len];
-
-			main_gs_cmd_7e[0] = 0x7e;
-
-			int j = 1;
-			for (int i = 0; i < sizeof(rx_buffer); i++) {
-				main_gs_cmd_7e[j] = rx_buffer[i];
-				j++;
-			}
-
-			main_gs_cmd_7e[j] = 0x7e;
-
-			HAL_UART_Transmit(&huart2, main_gs_cmd_7e, sizeof(main_gs_cmd_7e),
-					2000);
+			HAL_UART_Transmit(&huart2, rx_buffer, sizeof(rx_buffer), 2000);
 
 			myDebug("\r\n");
 			myDebug("__________\r\n");
 			memset(rx_buffer, '\0', sizeof(rx_buffer_len));
-			memset(main_gs_cmd_7e, '\0', main_gs_cmd_7e_len);
 		}
 
 		SUBGRF_SetRfFrequency(FREQ_437_MHZ);

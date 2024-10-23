@@ -1,9 +1,8 @@
-../Core/Src/main.c:112:5:countsDataBetweenFlags	32	static
-../Core/Src/main.c:135:6:setPacketParams	16	static
-../Core/Src/main.c:148:6:setModulationParams	16	static
-../Core/Src/main.c:158:6:radioConfig	24	static
-../Core/Src/main.c:169:6:HAL_UART_RxCpltCallback	112	dynamic
-../Core/Src/main.c:240:5:main	24	static
-../Core/Src/main.c:388:6:SystemClock_Config	112	static
-../Core/Src/main.c:428:6:DioIrqHndlr	368	dynamic
-../Core/Src/main.c:625:6:Error_Handler	4	static,ignoring_inline_asm
+../Core/Src/main.c:121:6:setPacketParams	16	static
+../Core/Src/main.c:134:6:setModulationParams	16	static
+../Core/Src/main.c:144:6:radioConfig	24	static
+../Core/Src/main.c:155:6:HAL_UART_RxCpltCallback	368	dynamic
+../Core/Src/main.c:536:5:main	24	static
+../Core/Src/main.c:685:6:SystemClock_Config	112	static
+../Core/Src/main.c:725:6:DioIrqHndlr	304	dynamic
+../Core/Src/main.c:881:6:Error_Handler	4	static,ignoring_inline_asm

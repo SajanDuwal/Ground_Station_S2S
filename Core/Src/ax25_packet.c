@@ -61,18 +61,18 @@ void getAX25Packet(uint8_t *infoField, uint8_t size) {
 	ax_buffer[1] = 0x9C; //	ASCII->N, HEX->0x4E, 1 bit shifted->0b10011100, Shifted HEX->0x9C
 	ax_buffer[2] = 0x64; //	ASCII->2, HEX->0x32, 1 bit shifted->0b01100100, Shifted HEX->0x64
 	ax_buffer[3] = 0xA6; //	ASCII->S, HEX->0x53, 1 bit shifted->0b10100110, Shifted HEX->0xA6
-	ax_buffer[4] = 0x64; //	ASCII->I, HEX->0x49, 1 bit shifted->0b10010010, Shifted HEX->0x92
+	ax_buffer[4] = 0x92; //	ASCII->I, HEX->0x49, 1 bit shifted->0b10010010, Shifted HEX->0x92
 	ax_buffer[5] = 0x40; //	ASCII-> , HEX->0x20, 1 bit shifted->0b01000000, Shifted HEX->0x40
 	ax_buffer[6] = 0xE0; //	0b111SSID0, SSID->0000 and LSB is set to 0; if more addresses follow, HEX->0xE0
 
 	//source field   9N2SI -0
-	ax_buffer[7] = 0x72; //	ASCII->9, HEX->0x39, 1 bit shifted->0b01110010, Shifted HEX->0x72
-	ax_buffer[8] = 0x9C; //	ASCII->N, HEX->0x4E, 1 bit shifted->0b10011100, Shifted HEX->0x9C
-	ax_buffer[9] = 0x64; //	ASCII->2, HEX->0x32, 1 bit shifted->0b01100100, Shifted HEX->0x64
-	ax_buffer[10] = 0xA6; //	ASCII->S, HEX->0x53, 1 bit shifted->0b10100110, Shifted HEX->0xA6
-	ax_buffer[11] = 0x64; //	ASCII->I, HEX->0x49, 1 bit shifted->0b10010010, Shifted HEX->0x92
-	ax_buffer[12] = 0x40; //	ASCII-> , HEX->0x20, 1 bit shifted->0b01000000, Shifted HEX->0x40
-	ax_buffer[13] = 0x61; //	0b011SSID1, SSID->0000 and LSB is set to 1 if this is the last address, HEX->0x61
+	ax_buffer[7] = infoField[13]; //	ASCII->9, HEX->0x39, 1 bit shifted->0b01110010, Shifted HEX->0x72
+	ax_buffer[8] = infoField[14]; //	ASCII->N, HEX->0x4E, 1 bit shifted->0b10011100, Shifted HEX->0x9C
+	ax_buffer[9] = infoField[15]; //	ASCII->2, HEX->0x32, 1 bit shifted->0b01100100, Shifted HEX->0x64
+	ax_buffer[10] = infoField[16]; //	ASCII->S, HEX->0x53, 1 bit shifted->0b10100110, Shifted HEX->0xA6
+	ax_buffer[11] = infoField[17]; //	ASCII->I, HEX->0x49, 1 bit shifted->0b10010010, Shifted HEX->0x92
+	ax_buffer[12] = infoField[18]; //	ASCII-> , HEX->0x20, 1 bit shifted->0b01000000, Shifted HEX->0x40
+	ax_buffer[13] = infoField[19]; //	0b011SSID1, SSID->0000 and LSB is set to 1 if this is the last address, HEX->0x61
 
 	//control bit
 	ax_buffer[14] = 0x03; //  Unnumbered Information Frame, AX.25 is always 0b00000011 i.e 0x03 in HEX
@@ -82,7 +82,7 @@ void getAX25Packet(uint8_t *infoField, uint8_t size) {
 
 	int i = 16;
 
-	for (int k = 0; k < size; k++) {
+	for (int k = 0; k < size-7; k++) {
 		ax_buffer[i] = infoField[k];
 		i++;
 	}
